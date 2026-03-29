@@ -1,0 +1,3 @@
+[submodule "project-notion"]
+	path = project-notion
+	url = git@github.com:ArziTech/project-notion.git
