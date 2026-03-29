@@ -1,0 +1,134 @@
+# ============================================
+# Docker Compose for Staging Environment
+# ============================================
+version: '3.9'
+
+services:
+  # ============================================
+  # Next.js Application (Staging)
+  # ============================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        - NODE_ENV=production
+        - NEXT_PUBLIC_APP_ENV=staging
+        - NEXT_PUBLIC_APP_NAME=Arzi StarterKit (Staging)
+        - NEXT_PUBLIC_API_URL=${STAGING_API_URL:-https://staging.arzi.com}
+        - DATABASE_URL=${STAGING_DATABASE_URL}
+        - AUTH_SECRET=${STAGING_AUTH_SECRET}
+    image: arzi-starterkit:staging
+    container_name: nextjs-staging
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_APP_ENV=staging
+      - NEXT_PUBLIC_APP_NAME=Arzi StarterKit (Staging)
+      - DATABASE_URL=${STAGING_DATABASE_URL}
+      - DATABASE_URL_DIRECT=${STAGING_DATABASE_URL}
+      - AUTH_SECRET=${STAGING_AUTH_SECRET}
+      - NEXT_PUBLIC_API_URL=${STAGING_API_URL:-https://staging.arzi.com}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${STAGING_REDIS_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - arzi-staging-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # PostgreSQL Database (Staging)
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: arzi-postgres-staging
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=${STAGING_DB_USER:-arzi}
+      - POSTGRES_PASSWORD=${STAGING_DB_PASSWORD}
+      - POSTGRES_DB=${STAGING_DB_NAME:-arzi_staging}
+    volumes:
+      - postgres-staging-data:/var/lib/postgresql/data
+      - ./backups:/backups
+    networks:
+      - arzi-staging-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STAGING_DB_USER:-arzi} -d ${STAGING_DB_NAME:-arzi_staging}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # Redis (Staging)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: arzi-redis-staging
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly yes --requirepass ${STAGING_REDIS_PASSWORD}
+    volumes:
+      - redis-staging-data:/data
+    networks:
+      - arzi-staging-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${STAGING_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # Nginx Reverse Proxy (Staging)
+  # ============================================
+  nginx:
+    image: nginx:alpine
+    container_name: arzi-nginx-staging
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx-staging.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl-staging:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - arzi-staging-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres-staging-data:
+    driver: local
+  redis-staging-data:
+    driver: local
+
+networks:
+  arzi-staging-network:
+    driver: bridge

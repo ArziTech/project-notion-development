@@ -1,0 +1,168 @@
+# ============================================
+# Docker Compose for Production Environment
+# ============================================
+version: '3.9'
+
+services:
+  # ============================================
+  # Next.js Application (Production)
+  # ============================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        - NODE_ENV=production
+        - NEXT_PUBLIC_APP_ENV=production
+        - NEXT_PUBLIC_APP_NAME=Arzi StarterKit
+        - NEXT_PUBLIC_API_URL=${PROD_API_URL:-https://arzi.com}
+        - DATABASE_URL=${PROD_DATABASE_URL}
+        - AUTH_SECRET=${PROD_AUTH_SECRET}
+    image: arzi-starterkit:production
+    container_name: nextjs-production
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_APP_ENV=production
+      - NEXT_PUBLIC_APP_NAME=Arzi StarterKit
+      - DATABASE_URL=${PROD_DATABASE_URL}
+      - DATABASE_URL_DIRECT=${PROD_DATABASE_URL}
+      - AUTH_SECRET=${PROD_AUTH_SECRET}
+      - NEXT_PUBLIC_API_URL=${PROD_API_URL:-https://arzi.com}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${PROD_REDIS_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - arzi-production-network
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ============================================
+  # PostgreSQL Database (Production)
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: arzi-postgres-production
+    ports:
+      - "5434:5432"
+    environment:
+      - POSTGRES_USER=${PROD_DB_USER:-arzi}
+      - POSTGRES_PASSWORD=${PROD_DB_PASSWORD}
+      - POSTGRES_DB=${PROD_DB_NAME:-arzi}
+    volumes:
+      - postgres-prod-data:/var/lib/postgresql/data
+      - ./backups:/backups
+    networks:
+      - arzi-production-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PROD_DB_USER:-arzi} -d ${PROD_DB_NAME:-arzi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ============================================
+  # Redis (Production)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: arzi-redis-production
+    ports:
+      - "6381:6379"
+    command: redis-server --appendonly yes --requirepass ${PROD_REDIS_PASSWORD}
+    volumes:
+      - redis-prod-data:/data
+    networks:
+      - arzi-production-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${PROD_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # ============================================
+  # Nginx Reverse Proxy (Production)
+  # ============================================
+  nginx:
+    image: nginx:alpine
+    container_name: arzi-nginx-production
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-production.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl-production:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - arzi-production-network
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+
+volumes:
+  postgres-prod-data:
+    driver: local
+  redis-prod-data:
+    driver: local
+
+networks:
+  arzi-production-network:
+    driver: bridge

@@ -1,0 +1,8 @@
+{
+  "name": "project-notion",
+  "description": "Notion-Claude Code integration plugin for task management workflow. Provides skills for brainstorming, planning, and implementing tasks in Notion.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Your Name"
+  }
+}
